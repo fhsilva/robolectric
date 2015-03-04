@@ -15,6 +15,7 @@ import org.junit.runners.model.TestClass;
 import org.robolectric.annotation.*;
 import org.robolectric.internal.bytecode.*;
 import org.robolectric.internal.dependency.CachedDependencyResolver;
+import org.robolectric.internal.dependency.CompositeDependencyResolver;
 import org.robolectric.internal.dependency.DependencyResolver;
 import org.robolectric.internal.dependency.LocalDependencyResolver;
 import org.robolectric.internal.dependency.MavenDependencyResolver;
@@ -54,6 +55,7 @@ public class RobolectricTestRunner extends BlockJUnit4ClassRunner {
   private final EnvHolder envHolder;
   private TestLifecycle<Application> testLifecycle;
   private DependencyResolver dependencyResolver;
+  private static final int CACHE_EXPIRE_TIME = 60 * 60 * 24 * 1000;
 
   static {
     new SecureRandom(); // this starts up the Poller SunPKCS11-Darwin thread early, outside of any Robolectric classloader
@@ -100,23 +102,20 @@ public class RobolectricTestRunner extends BlockJUnit4ClassRunner {
     if (dependencyResolver == null) {
       File cacheDir = new File(new File(System.getProperty("java.io.tmpdir")), "robolectric");
       cacheDir.mkdir();
-      if (cacheDir.exists()) {
-        dependencyResolver = new CachedDependencyResolver(new MavenDependencyResolver(), cacheDir, 60 * 60 * 24 * 1000);
-      } else {
-        dependencyResolver = new MavenDependencyResolver();
-      }
-
-      String dependencyDir = System.getenv("ROBOLECTRIC_DEPENDENCY_DIR");
-      if (dependencyDir == null) {
-          dependencyDir = System.getProperty("robolectric.dependency.dir");
-      }
-
-      if (dependencyDir != null) {
-        dependencyResolver = new LocalDependencyResolver(dependencyResolver, new File(dependencyDir));
-      }
+      String dependencyDir = getLocalDependencyDir();
+      dependencyResolver = new CompositeDependencyResolver(Arrays.asList(
+              new LocalDependencyResolver(dependencyDir == null?null:new File(dependencyDir)),
+              new CachedDependencyResolver(new MavenDependencyResolver(), cacheDir, CACHE_EXPIRE_TIME)));
     }
-
     return dependencyResolver;
+  }
+
+  private String getLocalDependencyDir(){
+    String dependencyDir = System.getenv("ROBOLECTRIC_DEPENDENCY_DIR");
+    if (dependencyDir == null) {
+      dependencyDir = System.getProperty("robolectric.dependency.dir");
+    }
+    return dependencyDir;
   }
 
   public SdkEnvironment createSdkEnvironment(SdkConfig sdkConfig) {
